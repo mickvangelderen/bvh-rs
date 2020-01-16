@@ -1,5 +1,5 @@
-use crate::vector::*;
 use crate::aabb::*;
+use crate::vector::*;
 use std::convert::TryInto;
 
 pub type Triangle = [u32; 3];
@@ -54,17 +54,20 @@ impl Tree {
             count: 0,
         });
 
-        process(&mut tree, 0, aabb, vertices, triangles);
+        process(&mut tree, 0, 0, aabb, vertices, triangles);
 
         fn process(
             tree: &mut Tree,
+            depth: u32,
             node_index: u32,
             aabb: AABB3,
             vertices: &[Vertex],
             triangles: &[Triangle],
         ) {
+            tree.nodes[node_index as usize].min = aabb.min;
+            tree.nodes[node_index as usize].max = aabb.max;
             let triangle_count: u32 = triangles.len().try_into().unwrap();
-            if triangle_count <= 64 {
+            if triangle_count <= 1 || depth == 14 {
                 // Leaf node.
                 let offset: u32 = tree.triangles.len().try_into().unwrap();
                 tree.nodes[node_index as usize].left_or_offset = offset;
@@ -110,14 +113,19 @@ impl Tree {
                     }
 
                     // Adjust aabb to include all vertices from its triangles.
-                    // for &triangle in child_triangles.iter() {
-                    //     for &vertex_index in triangle.iter() {
-                    //         let point = vertices[vertex_index as usize].pos_in_obj;
-                    //         aabb.include_point(point);
-                    //     }
-                    // }
+                    let first = vertices[child_triangles[0][0] as usize];
+                    let aabb = child_triangles.iter().fold(
+                        AABB3::from_point(first),
+                        |mut aabb, triangle| {
+                            for &vertex_index in triangle.iter() {
+                                let point = vertices[vertex_index as usize];
+                                aabb.include_point(point);
+                            }
+                            aabb
+                        },
+                    );
 
-                    process(tree, child_node_index, aabb, vertices, &child_triangles[..]);
+                    process(tree, depth + 1, child_node_index, aabb, vertices, &child_triangles[..]);
 
                     child_triangles.clear();
                 }

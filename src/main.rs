@@ -21,6 +21,41 @@ pub struct Scene {
     pub mesh_descriptions: Vec<MeshDescription>,
 }
 
+const RGBA_PALETTE: [[f32; 4]; 32] = [
+    [0.329, 0.588, 0.208, 1.000],
+    [0.337, 0.475, 0.910, 1.000],
+    [0.875, 0.729, 0.180, 1.000],
+    [0.522, 0.459, 0.859, 1.000],
+    [0.659, 0.792, 0.314, 1.000],
+    [0.867, 0.443, 0.820, 1.000],
+    [0.424, 0.859, 0.522, 1.000],
+    [0.757, 0.310, 0.635, 1.000],
+    [0.357, 0.827, 0.592, 1.000],
+    [0.863, 0.294, 0.545, 1.000],
+    [0.294, 0.816, 0.678, 1.000],
+    [0.867, 0.329, 0.294, 1.000],
+    [0.231, 0.902, 0.918, 1.000],
+    [0.843, 0.365, 0.396, 1.000],
+    [0.306, 0.584, 0.325, 1.000],
+    [0.663, 0.443, 0.808, 1.000],
+    [0.808, 0.698, 0.243, 1.000],
+    [0.294, 0.604, 0.894, 1.000],
+    [0.824, 0.533, 0.149, 1.000],
+    [0.439, 0.510, 0.812, 1.000],
+    [0.745, 0.761, 0.361, 1.000],
+    [0.733, 0.510, 0.804, 1.000],
+    [0.675, 0.808, 0.478, 1.000],
+    [0.824, 0.486, 0.741, 1.000],
+    [0.518, 0.506, 0.176, 1.000],
+    [0.812, 0.431, 0.612, 1.000],
+    [0.835, 0.659, 0.322, 1.000],
+    [0.835, 0.373, 0.486, 1.000],
+    [0.784, 0.588, 0.341, 1.000],
+    [0.824, 0.455, 0.357, 1.000],
+    [0.757, 0.435, 0.165, 1.000],
+    [0.835, 0.451, 0.286, 1.000],
+];
+
 impl Scene {
     pub fn from_meshes(meshes: &[Mesh]) -> Self {
         let mut pos_in_obj_buffer = Vec::new();
@@ -34,7 +69,7 @@ impl Scene {
                     pos_in_obj_buffer.extend(
                         mesh.vertices
                             .iter()
-                            .map(|&vertex| -> [f32; 3] { vertex.into() })
+                            .map(|&vertex| -> [f32; 3] { vertex.into() }),
                     );
                     offset
                 },
@@ -59,15 +94,13 @@ impl Scene {
 const VS_POS_IN_OBJ_LOC: gl::AttributeLocation =
     unsafe { gl::AttributeLocation::from_i32_unchecked(0) };
 
-const VS_P0_LOC: gl::AttributeLocation =
-    unsafe { gl::AttributeLocation::from_i32_unchecked(0) };
-const VS_P1_LOC: gl::AttributeLocation =
-    unsafe { gl::AttributeLocation::from_i32_unchecked(1) };
-const VS_RGBA_LOC: gl::AttributeLocation =
-    unsafe { gl::AttributeLocation::from_i32_unchecked(2) };
+const VS_P0_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(0) };
+const VS_P1_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(1) };
+const VS_RGBA_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(2) };
 
 const OBJ_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
 const CLP_TO_CAM_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
+const RGBA_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
 
 #[derive(Debug)]
 pub struct MeshDescription {
@@ -245,7 +278,7 @@ fn main() {
         (vao, vb, eb)
     };
 
-    let (boxes_vao, _vb, _eb) = unsafe {
+    let (boxes_vao, _vb, _eb, mesh_node_descriptions) = unsafe {
         let vao = gl.create_vertex_array();
         let vb = gl.create_buffer();
         let eb = gl.create_buffer();
@@ -258,30 +291,24 @@ fn main() {
         }
 
         let mut color_index = 0;
-        let colors = [
-            [1.0, 0.0, 0.0, 1.0],
-            [0.0, 1.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [1.0, 1.0, 0.0, 1.0],
-            [1.0, 0.0, 1.0, 1.0],
-            [0.0, 1.0, 1.0, 1.0],
-        ];
 
-        let vertex_buffer = meshes.iter().fold(Vec::new(), |mut buffer, mesh| {
-            let node = &mesh.bvh.nodes[0];
-            buffer.push(Vertex {
-                p0: node.min.into(),
-                p1: node.max.into(),
-                rgba: {
-                    let color = colors[color_index];
-                    color_index = (color_index + 1) % colors.len();
-                    color
-                }
-            });
-            buffer
+        let (vertex_buffer, mesh_node_descriptions) = meshes.iter().fold((Vec::new(), Vec::new()), |(mut vertex_buffer, mut mesh_node_descriptions), mesh| {
+            let rgba = RGBA_PALETTE[color_index];
+            color_index = (color_index + 1) % RGBA_PALETTE.len();
+            let node_descriptions: Vec<u32> = mesh.bvh.nodes.iter().map(|node| {
+                let vertex_index: u32 = vertex_buffer.len().try_into().unwrap();
+                vertex_buffer.push(Vertex {
+                    p0: node.min.into(),
+                    p1: node.max.into(),
+                    rgba,
+                });
+                vertex_index
+            }).collect();
+            mesh_node_descriptions.push(node_descriptions);
+            (vertex_buffer, mesh_node_descriptions)
         });
 
-        let point_buffer: Vec<u32> = (0u32..meshes.len().try_into().unwrap()).collect();
+        let point_buffer: Vec<u32> = (0u32..vertex_buffer.len().try_into().unwrap()).collect();
 
         gl.named_buffer_data(vb, vertex_buffer.vec_as_bytes(), gl::STATIC_DRAW);
         gl.named_buffer_data(eb, point_buffer.vec_as_bytes(), gl::STATIC_DRAW);
@@ -294,17 +321,31 @@ fn main() {
         gl.vertex_array_attrib_binding(vao, VS_P0_LOC, BBI_00);
 
         gl.enable_vertex_array_attrib(vao, VS_P1_LOC);
-        gl.vertex_array_attrib_format(vao, VS_P1_LOC, 3, gl::FLOAT, false, std::mem::size_of::<[f32; 3]>() as u32);
+        gl.vertex_array_attrib_format(
+            vao,
+            VS_P1_LOC,
+            3,
+            gl::FLOAT,
+            false,
+            std::mem::size_of::<[f32; 3]>() as u32,
+        );
         gl.vertex_array_attrib_binding(vao, VS_P1_LOC, BBI_00);
 
         gl.enable_vertex_array_attrib(vao, VS_RGBA_LOC);
-        gl.vertex_array_attrib_format(vao, VS_RGBA_LOC, 4, gl::FLOAT, false, std::mem::size_of::<[f32; 6]>() as u32);
+        gl.vertex_array_attrib_format(
+            vao,
+            VS_RGBA_LOC,
+            4,
+            gl::FLOAT,
+            false,
+            std::mem::size_of::<[f32; 6]>() as u32,
+        );
         gl.vertex_array_attrib_binding(vao, VS_RGBA_LOC, BBI_00);
 
         gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, std::mem::size_of::<Vertex>() as u32);
         gl.vertex_array_element_buffer(vao, eb);
 
-        (vao, vb, eb)
+        (vao, vb, eb, mesh_node_descriptions)
     };
 
     let start = std::time::Instant::now();
@@ -326,6 +367,8 @@ fn main() {
             zoom_velocity: 0.5,
         },
     };
+    let mut current_mesh = 0;
+    let mut current_depth = 0;
 
     event_loop.run(move |event, _, control_flow| {
         use glutin::event::*;
@@ -347,8 +390,44 @@ fn main() {
                     match (input.virtual_keycode, input.state) {
                         (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
                             *control_flow = ControlFlow::Exit;
+                        },
+                        _ => {}
+                    }
+
+                    if input.state == ElementState::Pressed {
+                        match input.scancode {
+                            2 => {
+                            current_mesh = match keyboard_state.lshift {
+                                ElementState::Released => {
+                                    if current_mesh == meshes.len() - 1 {
+                                        0
+                                    } else {
+                                        current_mesh + 1
+                                    }
+                                }
+                                ElementState::Pressed => {
+                                    if current_mesh == 0 {
+                                        meshes.len() - 1
+                                    } else {
+                                        current_mesh - 1
+                                    }
+                                }
+                            };
+                        }
+                        3 => {
+                            current_depth = match keyboard_state.lshift {
+                                ElementState::Released => current_depth + 1,
+                                ElementState::Pressed => {
+                                    if current_depth == 0 {
+                                        0
+                                    } else {
+                                        current_depth - 1
+                                    }
+                                }
+                            };
                         }
                         _ => {}
+                    }
                     }
                 }
                 WindowEvent::Focused(focus) => window_state.focus = focus,
@@ -456,7 +535,12 @@ fn main() {
                 let obj_to_clp = cam_to_clp * wld_to_cam;
 
                 unsafe {
-                    gl.viewport(0, 0, window_state.dimensions[0] as i32, window_state.dimensions[1] as i32);
+                    gl.viewport(
+                        0,
+                        0,
+                        window_state.dimensions[0] as i32,
+                        window_state.dimensions[1] as i32,
+                    );
 
                     gl.enable(gl::DEPTH_TEST);
                     gl.clear_color(
@@ -480,7 +564,20 @@ fn main() {
                     );
                     gl.bind_vertex_array(vao);
 
-                    for mesh in scene.mesh_descriptions.iter() {
+                    let mut color_index = 0;
+
+                    for (mesh_index, mesh) in scene.mesh_descriptions.iter().enumerate() {
+                        let color = {
+                            let [r, g, b, a] = RGBA_PALETTE[color_index];
+                            color_index = (color_index + 1) % RGBA_PALETTE.len();
+                            [r * 0.8, g * 0.8, b * 0.8, a]
+                        };
+
+                        if mesh_index != current_mesh {
+                            continue;
+                        }
+
+                        gl.uniform_4f(RGBA_LOC, color);
                         gl.draw_elements_base_vertex(
                             gl::TRIANGLES,
                             mesh.triangle_count * 3,
@@ -503,7 +600,37 @@ fn main() {
                     );
                     gl.bind_vertex_array(boxes_vao);
 
-                    gl.draw_elements_base_vertex(gl::POINTS, meshes.len().try_into().unwrap(), gl::UNSIGNED_INT, 0, 0);
+                    let bvh = &meshes[current_mesh].bvh;
+                    let mut current_nodes: Vec<usize> = vec![0];
+                    let mut next_nodes: Vec<usize> = vec![];
+                    let mut depth = 0;
+
+                    'out: loop {
+                        if depth == current_depth {
+                            let node_descriptions = &mesh_node_descriptions[current_mesh];
+                            for node_index in current_nodes {
+                                let offset = node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
+                                gl.draw_elements_base_vertex(gl::POINTS, 1, gl::UNSIGNED_INT, offset, 0);
+                            }
+                            break 'out;
+                        }
+
+                        for node_index in current_nodes.drain(..) {
+                            let node: &bvh::bvh::Node = &bvh.nodes[node_index];
+                            if node.count == std::u32::MAX {
+                                // branch.
+                                next_nodes.push(node.left_or_offset as usize);
+                                next_nodes.push(node.left_or_offset as usize + 1);
+                            } else {
+                                // leaf.
+                                // didn't reach
+                                break 'out;
+                            }
+                        }
+
+                        depth += 1;
+                        std::mem::swap(&mut current_nodes, &mut next_nodes);
+                    }
                 }
 
                 windowed_context.swap_buffers().unwrap();
