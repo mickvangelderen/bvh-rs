@@ -16,8 +16,14 @@ out vec4 fs_rgba;
 
 void main() {
   fs_rgba = ge_rgba[0];
-  vec3 p0 = (gl_InvocationID == 0) ? gl_in[0].gl_Position.xyz : ge_p1[0];
-  vec3 p1 = (gl_InvocationID == 0) ? ge_p1[0] : gl_in[0].gl_Position.xyz;
+  vec3 a = gl_in[0].gl_Position.xyz;
+  vec3 b = ge_p1[0];
+  if (all(lessThan((b - a), vec3(0.02)))) {
+      a -= vec3(0.01);
+      b += vec3(0.01);
+  }
+  vec3 p0 = (gl_InvocationID == 0) ? a : b;
+  vec3 p1 = (gl_InvocationID == 0) ? b : a;
   EMIT_CORNER(p0, p0, p0);
   EMIT_CORNER(p0, p0, p1);
   EMIT_CORNER(p0, p1, p1);

@@ -7,6 +7,35 @@ pub struct Vector3<T> {
     pub z: T,
 }
 
+impl<T> Vector3<T> where T: Copy {
+    pub fn from_scalar(scalar: T) -> Self {
+        Self {
+            x: scalar,
+            y: scalar,
+            z: scalar,
+        }
+    }
+}
+
+impl<T> Vector3<T> where T: PartialOrd {
+    pub fn largest_component(self) -> Axis3 {
+        let Self { x, y, z } = self;
+        if x >= y {
+            if x >= z {
+                Axis3::X
+            } else {
+                Axis3::Z
+            }
+        } else {
+            if y >= z {
+                Axis3::Y
+            } else {
+                Axis3::Z
+            }
+        }
+    }
+}
+
 impl<T> Vector3<T>
 where
     T: num_traits::identities::Zero,

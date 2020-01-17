@@ -125,9 +125,18 @@ fn main() {
         .unwrap_or(std::ffi::OsString::from("resources/sponza/sponza.obj"));
     let (models, _materials) = tobj::load_obj(path.as_ref()).expect("Failed to load model.");
 
+    let mesh_count = models.len();
     let meshes: Vec<Mesh> = models
         .into_iter()
-        .map(|tobj::Model { name, mesh }| {
+        .enumerate()
+        .map(|(mesh_index, tobj::Model { name, mesh })| {
+            println!(
+                "Loading mesh {:?} {:03}/{:03}",
+                &name,
+                mesh_index + 1,
+                mesh_count
+            );
+
             let vertex_count = mesh.positions.len() / 3;
 
             let mut vertices = Vec::with_capacity(vertex_count);
@@ -292,21 +301,29 @@ fn main() {
 
         let mut color_index = 0;
 
-        let (vertex_buffer, mesh_node_descriptions) = meshes.iter().fold((Vec::new(), Vec::new()), |(mut vertex_buffer, mut mesh_node_descriptions), mesh| {
-            let rgba = RGBA_PALETTE[color_index];
-            color_index = (color_index + 1) % RGBA_PALETTE.len();
-            let node_descriptions: Vec<u32> = mesh.bvh.nodes.iter().map(|node| {
-                let vertex_index: u32 = vertex_buffer.len().try_into().unwrap();
-                vertex_buffer.push(Vertex {
-                    p0: node.min.into(),
-                    p1: node.max.into(),
-                    rgba,
-                });
-                vertex_index
-            }).collect();
-            mesh_node_descriptions.push(node_descriptions);
-            (vertex_buffer, mesh_node_descriptions)
-        });
+        let (vertex_buffer, mesh_node_descriptions) = meshes.iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut vertex_buffer, mut mesh_node_descriptions), mesh| {
+                let rgba = RGBA_PALETTE[color_index];
+                color_index = (color_index + 1) % RGBA_PALETTE.len();
+                let node_descriptions: Vec<u32> = mesh
+                    .bvh
+                    .nodes
+                    .iter()
+                    .map(|node| {
+                        let vertex_index: u32 = vertex_buffer.len().try_into().unwrap();
+                        vertex_buffer.push(Vertex {
+                            p0: node.min.into(),
+                            p1: node.max.into(),
+                            rgba,
+                        });
+                        vertex_index
+                    })
+                    .collect();
+                mesh_node_descriptions.push(node_descriptions);
+                (vertex_buffer, mesh_node_descriptions)
+            },
+        );
 
         let point_buffer: Vec<u32> = (0u32..vertex_buffer.len().try_into().unwrap()).collect();
 
@@ -367,6 +384,7 @@ fn main() {
             zoom_velocity: 0.5,
         },
     };
+    let mut focus_camera = false;
     let mut current_mesh = 0;
     let mut current_depth = 0;
 
@@ -390,44 +408,47 @@ fn main() {
                     match (input.virtual_keycode, input.state) {
                         (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
                             *control_flow = ControlFlow::Exit;
-                        },
+                        }
+                        (Some(VirtualKeyCode::Space), ElementState::Pressed) => {
+                            focus_camera = !focus_camera;
+                        }
                         _ => {}
                     }
 
                     if input.state == ElementState::Pressed {
                         match input.scancode {
                             2 => {
-                            current_mesh = match keyboard_state.lshift {
-                                ElementState::Released => {
-                                    if current_mesh == meshes.len() - 1 {
-                                        0
-                                    } else {
-                                        current_mesh + 1
+                                current_mesh = match keyboard_state.lshift {
+                                    ElementState::Released => {
+                                        if current_mesh == meshes.len() - 1 {
+                                            0
+                                        } else {
+                                            current_mesh + 1
+                                        }
                                     }
-                                }
-                                ElementState::Pressed => {
-                                    if current_mesh == 0 {
-                                        meshes.len() - 1
-                                    } else {
-                                        current_mesh - 1
+                                    ElementState::Pressed => {
+                                        if current_mesh == 0 {
+                                            meshes.len() - 1
+                                        } else {
+                                            current_mesh - 1
+                                        }
                                     }
-                                }
-                            };
+                                };
+                            }
+                            3 => {
+                                current_depth = match keyboard_state.lshift {
+                                    ElementState::Released => current_depth + 1,
+                                    ElementState::Pressed => {
+                                        if current_depth == 0 {
+                                            0
+                                        } else {
+                                            current_depth - 1
+                                        }
+                                    }
+                                };
+                            }
+                            _ => {}
                         }
-                        3 => {
-                            current_depth = match keyboard_state.lshift {
-                                ElementState::Released => current_depth + 1,
-                                ElementState::Pressed => {
-                                    if current_depth == 0 {
-                                        0
-                                    } else {
-                                        current_depth - 1
-                                    }
-                                }
-                            };
-                        }
-                        _ => {}
-                    }
                     }
                 }
                 WindowEvent::Focused(focus) => window_state.focus = focus,
@@ -482,17 +503,17 @@ fn main() {
                         use cgmath::prelude::*;
                         cgmath::Vector3::zero()
                     },
-                    yaw: cgmath::Rad(if window_state.focus {
+                    yaw: cgmath::Rad(if window_state.focus && focus_camera {
                         -mouse_state.dx as f32
                     } else {
                         0.0
                     }),
-                    pitch: cgmath::Rad(if window_state.focus {
+                    pitch: cgmath::Rad(if window_state.focus && focus_camera {
                         -mouse_state.dy as f32
                     } else {
                         0.0
                     }),
-                    fovy: cgmath::Rad(if window_state.focus {
+                    fovy: cgmath::Rad(if window_state.focus && focus_camera {
                         mouse_state.dscroll as f32
                     } else {
                         0.0
@@ -574,7 +595,7 @@ fn main() {
                         };
 
                         if mesh_index != current_mesh {
-                            continue;
+                            // continue;
                         }
 
                         gl.uniform_4f(RGBA_LOC, color);
@@ -603,18 +624,8 @@ fn main() {
                     let bvh = &meshes[current_mesh].bvh;
                     let mut current_nodes: Vec<usize> = vec![0];
                     let mut next_nodes: Vec<usize> = vec![];
-                    let mut depth = 0;
 
-                    'out: loop {
-                        if depth == current_depth {
-                            let node_descriptions = &mesh_node_descriptions[current_mesh];
-                            for node_index in current_nodes {
-                                let offset = node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
-                                gl.draw_elements_base_vertex(gl::POINTS, 1, gl::UNSIGNED_INT, offset, 0);
-                            }
-                            break 'out;
-                        }
-
+                    for _ in 0..current_depth {
                         for node_index in current_nodes.drain(..) {
                             let node: &bvh::bvh::Node = &bvh.nodes[node_index];
                             if node.count == std::u32::MAX {
@@ -624,12 +635,22 @@ fn main() {
                             } else {
                                 // leaf.
                                 // didn't reach
-                                break 'out;
                             }
                         }
 
-                        depth += 1;
+                        if next_nodes.is_empty() {
+                            break;
+                        }
+
                         std::mem::swap(&mut current_nodes, &mut next_nodes);
+                    }
+
+                    let node_descriptions = &mesh_node_descriptions[current_mesh];
+
+                    for node_index in current_nodes {
+                        let offset =
+                            node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
+                        gl.draw_elements_base_vertex(gl::POINTS, 1, gl::UNSIGNED_INT, offset, 0);
                     }
                 }
 
