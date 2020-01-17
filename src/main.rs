@@ -451,13 +451,17 @@ fn main() {
                         }
                     }
                 }
+                WindowEvent::CursorMoved { position, .. } => {
+                    mouse_state.x = position.x as f64 / window_state.dimensions[0] as f64;
+                    mouse_state.y = 1.0 - position.y as f64 / window_state.dimensions[1] as f64;
+                }
                 WindowEvent::Focused(focus) => window_state.focus = focus,
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::Key(keyboard_input) => keyboard_state.update(keyboard_input),
-                DeviceEvent::Motion { axis, value } => mouse_state.update(axis, value),
+                DeviceEvent::Motion { axis, value } => mouse_state.update_motion(axis, value),
                 _ => {}
             },
             Event::MainEventsCleared => {
@@ -521,7 +525,7 @@ fn main() {
                 };
                 camera.update(&delta);
 
-                mouse_state.clear();
+                mouse_state.clear_motion();
 
                 // Render.
                 let frustum = {
@@ -548,6 +552,33 @@ fn main() {
                     y1: 1.0,
                     z0: 1.0,
                     z1: -1.0,
+                };
+
+                let ray = {
+                    use cgmath::{InnerSpace, Rotation};
+
+                    let (x, y) = if focus_camera {
+                        (0.5, 0.5)
+                    } else {
+                        (mouse_state.x, mouse_state.y)
+                    };
+
+                    bvh::ray::Ray {
+                        origin: camera.transform.position,
+                        direction: camera
+                            .transform
+                            .rot_to_parent()
+                            .cast::<f64>()
+                            .unwrap()
+                            .rotate_vector(cgmath::Vector3 {
+                                x: (1.0 - x) * frustum.x0 + x * frustum.x1,
+                                y: (1.0 - y) * frustum.y0 + y * frustum.y1,
+                                z: -1.0,
+                            })
+                            .normalize()
+                            .cast::<f32>()
+                            .unwrap(),
+                    }
                 };
 
                 let wld_to_cam = camera.transform.pos_from_parent().cast::<f64>().unwrap();
@@ -621,36 +652,66 @@ fn main() {
                     );
                     gl.bind_vertex_array(boxes_vao);
 
-                    let bvh = &meshes[current_mesh].bvh;
-                    let mut current_nodes: Vec<usize> = vec![0];
-                    let mut next_nodes: Vec<usize> = vec![];
+                    // dbg!(ray);
 
-                    for _ in 0..current_depth {
-                        for node_index in current_nodes.drain(..) {
-                            let node: &bvh::bvh::Node = &bvh.nodes[node_index];
-                            if node.count == std::u32::MAX {
-                                // branch.
-                                next_nodes.push(node.left_or_offset as usize);
-                                next_nodes.push(node.left_or_offset as usize + 1);
-                            } else {
-                                // leaf.
-                                // didn't reach
+                    for (mesh, node_descriptions) in
+                        meshes.iter().zip(mesh_node_descriptions.iter())
+                    {
+                        let mut current_nodes: Vec<usize> = vec![0];
+                        let mut next_nodes: Vec<usize> = vec![];
+
+                        for _ in 0..20 {
+                            for node_index in current_nodes.drain(..) {
+                                let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index];
+
+                                if let Some(_) = bvh::intersect::ray_versus_aabb(
+                                    ray,
+                                    bvh::aabb::AABB3 {
+                                        min: node.min,
+                                        max: node.max,
+                                    },
+                                ) {
+                                    // dbg!(intersection);
+                                    let offset = node_descriptions[node_index] as usize
+                                        * std::mem::size_of::<u32>();
+                                    gl.draw_elements_base_vertex(
+                                        gl::POINTS,
+                                        1,
+                                        gl::UNSIGNED_INT,
+                                        offset,
+                                        0,
+                                    );
+                                } else {
+                                }
+
+                                if node.count == std::u32::MAX {
+                                    // branch.
+                                    next_nodes.push(node.left_or_offset as usize);
+                                    next_nodes.push(node.left_or_offset as usize + 1);
+                                } else {
+                                    // leaf.
+                                    // didn't reach
+                                }
                             }
+
+                            if next_nodes.is_empty() {
+                                break;
+                            }
+
+                            std::mem::swap(&mut current_nodes, &mut next_nodes);
                         }
 
-                        if next_nodes.is_empty() {
-                            break;
-                        }
-
-                        std::mem::swap(&mut current_nodes, &mut next_nodes);
-                    }
-
-                    let node_descriptions = &mesh_node_descriptions[current_mesh];
-
-                    for node_index in current_nodes {
-                        let offset =
-                            node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
-                        gl.draw_elements_base_vertex(gl::POINTS, 1, gl::UNSIGNED_INT, offset, 0);
+                        // for node_index in current_nodes {
+                        //     let offset =
+                        //         node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
+                        //     gl.draw_elements_base_vertex(
+                        //         gl::POINTS,
+                        //         1,
+                        //         gl::UNSIGNED_INT,
+                        //         offset,
+                        //         0,
+                        //     );
+                        // }
                     }
                 }
 
