@@ -1,36 +1,123 @@
 use cgmath::*;
 
-use crate::ray::*;
 use crate::aabb::*;
+use crate::ray::*;
 
-pub fn ray_versus_aabb(ray: Ray, aabb: AABB3) -> Option<Point3<f32>> {
-    let planes = Point3 {
-        x: if ray.direction.x > 0.0 { aabb.min.x } else { aabb.max.x },
-        y: if ray.direction.y > 0.0 { aabb.min.y } else { aabb.max.y },
-        z: if ray.direction.z > 0.0 { aabb.min.z } else { aabb.max.z },
+pub fn ray_versus_aabb(ray: Ray, aabb: AABB3) -> Option<f32> {
+    let frac_1_direction = [
+        1.0 / ray.direction.x,
+        1.0 / ray.direction.y,
+        1.0 / ray.direction.z,
+    ];
+
+    let t1 = {
+        let (n, f) = if ray.direction.x >= 0.0 {
+            (aabb.min.x, aabb.max.x)
+        } else {
+            (aabb.max.x, aabb.min.x)
+        };
+        (
+            (n - ray.origin.x) * frac_1_direction[0],
+            (f - ray.origin.x) * frac_1_direction[0],
+        )
     };
 
-    for &(a0, a1, a2) in [
-        (0, 1, 2),
-        (1, 2, 0),
-        (2, 0, 1),
-    ].iter() {
-        let t = (planes[a0] - ray.origin[a0]) / ray.direction[a0];
-        let p1 = ray.origin[a1] + t * ray.direction[a1];
-        let p2 = ray.origin[a2] + t * ray.direction[a2];
-        if p1 >= aabb.min[a1] && p1 < aabb.max[a1] && p2 >= aabb.min[a2] && p2 < aabb.max[a2] {
-            // Intersect plane
-            let mut p = Point3::origin();
-            p[a0] = planes[a0];
-            p[a1] = p1;
-            p[a2] = p2;
-            return Some(p);
-        }
+    let t2 = {
+        let (n, f) = if ray.direction.y >= 0.0 {
+            (aabb.min.y, aabb.max.y)
+        } else {
+            (aabb.max.y, aabb.min.y)
+        };
+        (
+            (n - ray.origin.y) * frac_1_direction[1],
+            (f - ray.origin.y) * frac_1_direction[1],
+        )
+    };
+
+    if t1.0 > t2.1 || t2.0 > t1.1 {
+        return None;
+    }
+
+    let t1 = (
+        if t1.0 < t2.0 { t1.0 } else { t2.0 },
+        if t1.1 > t2.1 { t1.1 } else { t2.1 },
+    );
+
+    let t2 = {
+        let (n, f) = if ray.direction.z >= 0.0 {
+            (aabb.min.z, aabb.max.z)
+        } else {
+            (aabb.max.z, aabb.min.z)
+        };
+        (
+            (n - ray.origin.z) * frac_1_direction[2],
+            (f - ray.origin.z) * frac_1_direction[2],
+        )
+    };
+
+    if t1.0 > t2.1 || t2.0 > t1.1 {
+        return None;
+    }
+
+    let t1 = (
+        if t1.0 < t2.0 { t1.0 } else { t2.0 },
+        if t1.1 > t2.1 { t1.1 } else { t2.1 },
+    );
+
+    if t1.0 >= 0.0 {
+        return Some(t1.0);
+    }
+
+    if t1.1 >= 0.0 {
+        return Some(t1.1);
     }
 
     None
 }
 
-pub fn ray_versus_triangle(ray: Ray, triangle: [Point3<f32>; 3]) -> Option<Point3<f32>> {
-   unimplemented!()
+pub struct TriangleIntersection {
+    pub t: f32,
+    pub u: f32,
+    pub v: f32,
+    pub w: f32,
+}
+
+pub fn ray_versus_triangle(ray: Ray, triangle: [Point3<f32>; 3]) -> Option<TriangleIntersection> {
+    const E: f32 = 0.0000001;
+
+    let e01 = triangle[1] - triangle[0];
+    let e02 = triangle[2] - triangle[0];
+
+    let pvec = ray.direction.cross(e02);
+    let det = e01.dot(pvec);
+
+    if det < E {
+        // If the det is negative, the triangle is back-facing.
+        // If the det is close to zero, the ray is close to parallel.
+        // Parallel.
+        return None;
+    }
+
+    let frac_1_det = 1.0 / det;
+
+    let tvec = ray.origin - triangle[0];
+    let u = tvec.dot(pvec) * frac_1_det;
+    if u < 0.0 || u > 1.0 {
+        return None;
+    }
+
+    let qvec = tvec.cross(e01);
+    let v = ray.direction.dot(qvec) * frac_1_det;
+    if v < 0.0 || v > 1.0 {
+        return None;
+    }
+
+    let w = 1.0 - (u + v);
+    if w < 0.0 {
+        return None;
+    }
+
+    let t = e02.dot(qvec) * frac_1_det;
+
+    Some(TriangleIntersection { t, u, v, w })
 }

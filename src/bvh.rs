@@ -97,8 +97,13 @@ impl Tree {
                 .unwrap()
             } else {
                 let split_axis = (centroid_aabb.max - centroid_aabb.min).largest_component();
-                let split_value =
-                    (centroid_aabb.min[split_axis] + centroid_aabb.max[split_axis]) * 0.5;
+                // let split_value =
+                //     (centroid_aabb.min[split_axis] + centroid_aabb.max[split_axis]) * 0.5;
+                let scale = 1.0 / triangle_indices.len() as f32;
+                let split_value = triangle_indices
+                    .iter()
+                    .map(|&i| centroids[i as usize][split_axis] * scale)
+                    .sum();
 
                 let mut left_indices = Vec::with_capacity(triangle_count as usize);
                 let mut right_indices = Vec::with_capacity(triangle_count as usize);

@@ -581,6 +581,84 @@ fn main() {
                     }
                 };
 
+                // Cast ray, find closest hit.
+                let mut closest_t = std::f32::INFINITY;
+                let mut closest_mesh_index = 0;
+                let mut mesh_hit_node_indices = Vec::new();
+
+                for (mesh_index, mesh) in meshes.iter().enumerate() {
+                    let mut current_nodes: Vec<usize> = vec![0];
+                    let mut next_nodes: Vec<usize> = vec![];
+                    let hit_node_indices = {
+                        mesh_hit_node_indices.push(Vec::new());
+                        mesh_hit_node_indices.last_mut().unwrap()
+                    };
+
+                    loop {
+                        for node_index in current_nodes.drain(..) {
+                            let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index];
+
+                            if let Some(box_t) = bvh::intersect::ray_versus_aabb(
+                                ray,
+                                bvh::aabb::AABB3 {
+                                    min: node.min,
+                                    max: node.max,
+                                },
+                            ) {
+                                if box_t > closest_t {
+                                    // Can't find a closer intersection in this box.
+                                } else {
+                                    hit_node_indices.push(node_index);
+
+                                    if node.count == std::u32::MAX {
+                                        // branch.
+                                        next_nodes.push(node.left_or_offset as usize);
+                                        next_nodes.push(node.left_or_offset as usize + 1);
+                                    } else {
+                                        // leaf.
+                                        for vertex_indices in mesh
+                                            .bvh
+                                            .triangles
+                                            .iter()
+                                            .skip(node.left_or_offset as usize)
+                                            .take(node.count as usize)
+                                        {
+                                            let triangle = [
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[0] as usize],
+                                                )),
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[1] as usize],
+                                                )),
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[2] as usize],
+                                                )),
+                                            ];
+
+                                            if let Some(tri_int) =
+                                                bvh::intersect::ray_versus_triangle(ray, triangle)
+                                            {
+                                                if tri_int.t < closest_t {
+                                                    closest_t = tri_int.t;
+                                                    closest_mesh_index = mesh_index;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if next_nodes.is_empty() {
+                            break;
+                        }
+
+                        std::mem::swap(&mut current_nodes, &mut next_nodes);
+                    }
+                }
+
+                dbg!(closest_t);
+
                 let wld_to_cam = camera.transform.pos_from_parent().cast::<f64>().unwrap();
                 let cam_to_clp = frustum.perspective(&range);
                 let clp_to_cam = frustum.inverse_perspective(&range);
@@ -595,6 +673,9 @@ fn main() {
                     );
 
                     gl.enable(gl::DEPTH_TEST);
+                    gl.enable(gl::CULL_FACE);
+                    gl.cull_face(gl::BACK);
+
                     gl.clear_color(
                         0.7 + 0.1 * elapsed.sin(),
                         0.8 + 0.1 * (elapsed * 2.0).sin(),
@@ -622,7 +703,11 @@ fn main() {
                         let color = {
                             let [r, g, b, a] = RGBA_PALETTE[color_index];
                             color_index = (color_index + 1) % RGBA_PALETTE.len();
-                            [r * 0.8, g * 0.8, b * 0.8, a]
+                            if closest_t < std::f32::INFINITY && mesh_index == closest_mesh_index {
+                                [1.0, 0.0, 1.0, 1.0]
+                            } else {
+                                [r * 0.8, g * 0.8, b * 0.8, a]
+                            }
                         };
 
                         if mesh_index != current_mesh {
@@ -652,66 +737,20 @@ fn main() {
                     );
                     gl.bind_vertex_array(boxes_vao);
 
-                    // dbg!(ray);
+                    for (mesh_index, hit_node_indices) in mesh_hit_node_indices.iter().enumerate() {
+                        let node_descriptions = &mesh_node_descriptions[mesh_index];
 
-                    for (mesh, node_descriptions) in
-                        meshes.iter().zip(mesh_node_descriptions.iter())
-                    {
-                        let mut current_nodes: Vec<usize> = vec![0];
-                        let mut next_nodes: Vec<usize> = vec![];
-
-                        for _ in 0..20 {
-                            for node_index in current_nodes.drain(..) {
-                                let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index];
-
-                                if let Some(_) = bvh::intersect::ray_versus_aabb(
-                                    ray,
-                                    bvh::aabb::AABB3 {
-                                        min: node.min,
-                                        max: node.max,
-                                    },
-                                ) {
-                                    // dbg!(intersection);
-                                    let offset = node_descriptions[node_index] as usize
-                                        * std::mem::size_of::<u32>();
-                                    gl.draw_elements_base_vertex(
-                                        gl::POINTS,
-                                        1,
-                                        gl::UNSIGNED_INT,
-                                        offset,
-                                        0,
-                                    );
-                                } else {
-                                }
-
-                                if node.count == std::u32::MAX {
-                                    // branch.
-                                    next_nodes.push(node.left_or_offset as usize);
-                                    next_nodes.push(node.left_or_offset as usize + 1);
-                                } else {
-                                    // leaf.
-                                    // didn't reach
-                                }
-                            }
-
-                            if next_nodes.is_empty() {
-                                break;
-                            }
-
-                            std::mem::swap(&mut current_nodes, &mut next_nodes);
+                        for &node_index in hit_node_indices.iter() {
+                            let offset =
+                                node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
+                            gl.draw_elements_base_vertex(
+                                gl::POINTS,
+                                1,
+                                gl::UNSIGNED_INT,
+                                offset,
+                                0,
+                            );
                         }
-
-                        // for node_index in current_nodes {
-                        //     let offset =
-                        //         node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
-                        //     gl.draw_elements_base_vertex(
-                        //         gl::POINTS,
-                        //         1,
-                        //         gl::UNSIGNED_INT,
-                        //         offset,
-                        //         0,
-                        //     );
-                        // }
                     }
                 }
 
