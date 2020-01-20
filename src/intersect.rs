@@ -3,76 +3,33 @@ use cgmath::*;
 use crate::aabb::*;
 use crate::ray::*;
 
-pub fn ray_versus_aabb(ray: Ray, aabb: AABB3) -> Option<f32> {
-    let frac_1_direction = [
-        1.0 / ray.direction.x,
-        1.0 / ray.direction.y,
-        1.0 / ray.direction.z,
-    ];
-
-    let t1 = {
-        let (n, f) = if ray.direction.x >= 0.0 {
-            (aabb.min.x, aabb.max.x)
-        } else {
-            (aabb.max.x, aabb.min.x)
-        };
-        (
-            (n - ray.origin.x) * frac_1_direction[0],
-            (f - ray.origin.x) * frac_1_direction[0],
-        )
-    };
-
-    let t2 = {
-        let (n, f) = if ray.direction.y >= 0.0 {
-            (aabb.min.y, aabb.max.y)
-        } else {
-            (aabb.max.y, aabb.min.y)
-        };
-        (
-            (n - ray.origin.y) * frac_1_direction[1],
-            (f - ray.origin.y) * frac_1_direction[1],
-        )
-    };
-
-    if t1.0 > t2.1 || t2.0 > t1.1 {
-        return None;
+/// https://tavianator.com/fast-branchless-raybounding-box-intersections-part-2-nans/
+pub fn ray_versus_aabb(ray: RayPrecomputed, aabb: AABB3) -> bool {
+    #[inline]
+    fn min(a: f32, b: f32) -> f32 {
+        if a < b { a } else { b }
     }
 
-    let t1 = (
-        if t1.0 < t2.0 { t1.0 } else { t2.0 },
-        if t1.1 > t2.1 { t1.1 } else { t2.1 },
-    );
-
-    let t2 = {
-        let (n, f) = if ray.direction.z >= 0.0 {
-            (aabb.min.z, aabb.max.z)
-        } else {
-            (aabb.max.z, aabb.min.z)
-        };
-        (
-            (n - ray.origin.z) * frac_1_direction[2],
-            (f - ray.origin.z) * frac_1_direction[2],
-        )
-    };
-
-    if t1.0 > t2.1 || t2.0 > t1.1 {
-        return None;
+    #[inline]
+    fn max(a: f32, b: f32) -> f32 {
+        if a > b { a } else { b }
     }
 
-    let t1 = (
-        if t1.0 < t2.0 { t1.0 } else { t2.0 },
-        if t1.1 > t2.1 { t1.1 } else { t2.1 },
-    );
+    let t1 = (aabb.min.x - ray.origin.x)*ray.inv_direction.x;
+    let t2 = (aabb.max.x - ray.origin.x)*ray.inv_direction.x;
 
-    if t1.0 >= 0.0 {
-        return Some(t1.0);
+    let mut tmin = min(t1, t2);
+    let mut tmax = max(t1, t2);
+
+    for axis in 1..3 {
+        let t1 = (aabb.min[axis] - ray.origin[axis])*ray.inv_direction[axis];
+        let t2 = (aabb.max[axis] - ray.origin[axis])*ray.inv_direction[axis];
+
+        tmin = max(tmin, min(t1, t2));
+        tmax = min(tmax, max(t1, t2));
     }
 
-    if t1.1 >= 0.0 {
-        return Some(t1.1);
-    }
-
-    None
+    tmax > max(tmin, 0.0)
 }
 
 pub struct TriangleIntersection {
