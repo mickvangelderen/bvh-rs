@@ -411,6 +411,7 @@ fn main() {
                         }
                         (Some(VirtualKeyCode::Space), ElementState::Pressed) => {
                             focus_camera = !focus_camera;
+                            windowed_context.window().set_cursor_visible(!focus_camera);
                         }
                         _ => {}
                     }
