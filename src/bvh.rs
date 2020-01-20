@@ -77,7 +77,7 @@ impl Tree {
             triangle_indices: &[u32],
         ) -> AABB3 {
             let triangle_count: u32 = triangle_indices.len().try_into().unwrap();
-            let triangle_aabb = if triangle_count <= 64 || depth == 14 {
+            let triangle_aabb = if triangle_count <= 16 || depth == 18 {
                 // Leaf node.
                 let offset: u32 = tree.triangles.len().try_into().unwrap();
                 tree.nodes[node_index as usize].left_or_offset = offset;
