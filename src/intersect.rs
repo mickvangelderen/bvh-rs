@@ -3,33 +3,58 @@ use cgmath::*;
 use crate::aabb::*;
 use crate::ray::*;
 
-/// https://tavianator.com/fast-branchless-raybounding-box-intersections-part-2-nans/
-pub fn ray_versus_aabb(ray: RayPrecomputed, aabb: AABB3) -> bool {
+pub fn ray_versus_aabb(ray: Ray, aabb: AABB3) -> Option<f32> {
     #[inline]
     fn min(a: f32, b: f32) -> f32 {
-        if a < b { a } else { b }
+        if a < b {
+            a
+        } else {
+            b
+        }
     }
 
     #[inline]
     fn max(a: f32, b: f32) -> f32 {
-        if a > b { a } else { b }
+        if a > b {
+            a
+        } else {
+            b
+        }
     }
 
-    let t1 = (aabb.min.x - ray.origin.x)*ray.inv_direction.x;
-    let t2 = (aabb.max.x - ray.origin.x)*ray.inv_direction.x;
+    #[inline]
+    fn compute_t(ray: Ray, aabb: AABB3, axis: usize) -> (f32, f32) {
+        let (p0, p1) = if ray.direction[axis] >= 0.0 {
+            (aabb.min[axis], aabb.max[axis])
+        } else {
+            (aabb.max[axis], aabb.min[axis])
+        };
+        (
+            (p0 - ray.origin[axis]) / ray.direction[axis],
+            (p1 - ray.origin[axis]) / ray.direction[axis],
+        )
+    }
 
-    let mut tmin = min(t1, t2);
-    let mut tmax = max(t1, t2);
+    let (mut t0, mut t1) = compute_t(ray, aabb, 0);
 
     for axis in 1..3 {
-        let t1 = (aabb.min[axis] - ray.origin[axis])*ray.inv_direction[axis];
-        let t2 = (aabb.max[axis] - ray.origin[axis])*ray.inv_direction[axis];
+        let (n0, n1) = compute_t(ray, aabb, axis);
 
-        tmin = max(tmin, min(t1, t2));
-        tmax = min(tmax, max(t1, t2));
+        t0 = max(t0, n0);
+        t1 = min(t1, n1);
+
+        if t0 > t1 {
+            return None;
+        }
     }
 
-    tmax > max(tmin, 0.0)
+    if t0 > 0.0 {
+        Some(t0)
+    } else if t1 > 0.0 {
+        Some(t1)
+    } else {
+        None
+    }
 }
 
 pub struct TriangleIntersection {
@@ -77,4 +102,41 @@ pub fn ray_versus_triangle(ray: Ray, triangle: [Point3<f32>; 3]) -> Option<Trian
     let t = e02.dot(qvec) * frac_1_det;
 
     Some(TriangleIntersection { t, u, v, w })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ray_vs_aabb() {
+        let aabb = AABB3 {
+            min: crate::vector::Vector3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            },
+            max: crate::vector::Vector3 {
+                x: 3.0,
+                y: 3.0,
+                z: 3.0,
+            },
+        };
+
+        let ray = Ray {
+            origin: Point3 {
+                x: -1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            direction: Vector3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            }
+            .normalize(),
+        };
+
+        assert_eq!(Some(0.0), ray_versus_aabb(ray, aabb));
+    }
 }

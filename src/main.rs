@@ -581,8 +581,6 @@ fn main() {
                     }
                 };
 
-                let ray_precomputed = bvh::ray::RayPrecomputed::from(ray);
-
                 // Cast ray, find closest hit.
                 let mut closest_t = std::f32::INFINITY;
                 let mut closest_mesh_index = 0;
@@ -600,52 +598,52 @@ fn main() {
                         for node_index in current_nodes.drain(..) {
                             let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index];
 
-                            if bvh::intersect::ray_versus_aabb(
-                                ray_precomputed,
+                            if let Some(box_t) = bvh::intersect::ray_versus_aabb(
+                                ray,
                                 bvh::aabb::AABB3 {
                                     min: node.min,
                                     max: node.max,
                                 },
                             ) {
-                                // if box_t > closest_t {
-                                // Can't find a closer intersection in this box.
-                                // } else {
-                                hit_node_indices.push(node_index);
-
-                                if node.count == std::u32::MAX {
-                                    // branch.
-                                    next_nodes.push(node.left_or_offset as usize);
-                                    next_nodes.push(node.left_or_offset as usize + 1);
+                                if box_t > closest_t {
+                                    // Can't find a closer intersection in this box.
                                 } else {
-                                    // leaf.
-                                    for vertex_indices in mesh
-                                        .bvh
-                                        .triangles
-                                        .iter()
-                                        .skip(node.left_or_offset as usize)
-                                        .take(node.count as usize)
-                                    {
-                                        let triangle = [
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                mesh.vertices[vertex_indices[0] as usize],
-                                            )),
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                mesh.vertices[vertex_indices[1] as usize],
-                                            )),
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                mesh.vertices[vertex_indices[2] as usize],
-                                            )),
-                                        ];
+                                    hit_node_indices.push(node_index);
 
-                                        if let Some(tri_int) =
-                                            bvh::intersect::ray_versus_triangle(ray, triangle)
+                                    if node.count == std::u32::MAX {
+                                        // branch.
+                                        next_nodes.push(node.left_or_offset as usize);
+                                        next_nodes.push(node.left_or_offset as usize + 1);
+                                    } else {
+                                        // leaf.
+                                        for vertex_indices in mesh
+                                            .bvh
+                                            .triangles
+                                            .iter()
+                                            .skip(node.left_or_offset as usize)
+                                            .take(node.count as usize)
                                         {
-                                            if tri_int.t < closest_t {
-                                                closest_t = tri_int.t;
-                                                closest_mesh_index = mesh_index;
+                                            let triangle = [
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[0] as usize],
+                                                )),
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[1] as usize],
+                                                )),
+                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                    mesh.vertices[vertex_indices[2] as usize],
+                                                )),
+                                            ];
+
+                                            if let Some(tri_int) =
+                                                bvh::intersect::ray_versus_triangle(ray, triangle)
+                                            {
+                                                if tri_int.t < closest_t {
+                                                    closest_t = tri_int.t;
+                                                    closest_mesh_index = mesh_index;
+                                                }
                                             }
                                         }
-                                        // }
                                     }
                                 }
                             }
