@@ -101,7 +101,11 @@ pub fn ray_versus_triangle(ray: Ray, triangle: [Point3<f32>; 3]) -> Option<Trian
 
     let t = e02.dot(qvec) * frac_1_det;
 
-    Some(TriangleIntersection { t, u, v, w })
+    if t > 0.0 {
+        Some(TriangleIntersection { t, u, v, w })
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
