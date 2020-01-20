@@ -581,67 +581,86 @@ fn main() {
                     }
                 };
 
+                let cast_start = std::time::Instant::now();
+                let mut aabb_intersection_count = 0;
+                let mut triangle_intersection_count = 0;
+
                 // Cast ray, find closest hit.
                 let mut closest_t = std::f32::INFINITY;
                 let mut closest_mesh_index = 0;
                 let mut mesh_hit_node_indices = Vec::new();
 
                 for (mesh_index, mesh) in meshes.iter().enumerate() {
-                    let mut current_nodes: Vec<usize> = vec![0];
-                    let mut next_nodes: Vec<usize> = vec![];
+                    struct Item {
+                        node_base: u32,
+                        node_offset: u32,
+                    }
+
+                    let mut stack = vec![Item {
+                        node_base: 0,
+                        node_offset: 0,
+                    }];
+
                     let hit_node_indices = {
                         mesh_hit_node_indices.push(Vec::new());
                         mesh_hit_node_indices.last_mut().unwrap()
                     };
 
-                    loop {
-                        for node_index in current_nodes.drain(..) {
-                            let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index];
+                    while let Some(Item {
+                        node_base,
+                        node_offset,
+                    }) = stack.pop()
+                    {
+                        let node_index = node_base + node_offset;
+                        let node: &bvh::bvh::Node = &mesh.bvh.nodes[node_index as usize];
 
-                            if let Some(box_t) = bvh::intersect::ray_versus_aabb(
-                                ray,
-                                bvh::aabb::AABB3 {
-                                    min: node.min,
-                                    max: node.max,
-                                },
-                            ) {
-                                if box_t > closest_t {
-                                    // Can't find a closer intersection in this box.
+                        aabb_intersection_count += 1;
+                        if let Some(box_t) = bvh::intersect::ray_versus_aabb(
+                            ray,
+                            bvh::aabb::AABB3 {
+                                min: node.min,
+                                max: node.max,
+                            },
+                        ) {
+                            if box_t > closest_t {
+                                // Can't find a closer intersection in this box.
+                            } else {
+                                hit_node_indices.push(node_index);
+
+                                if node.count == std::u32::MAX {
+                                    // branch.
+                                    stack.push(Item {
+                                        node_base: node.left_or_offset,
+                                        node_offset: 0,
+                                    });
                                 } else {
-                                    hit_node_indices.push(node_index);
+                                    // leaf.
+                                    for vertex_indices in mesh
+                                        .bvh
+                                        .triangles
+                                        .iter()
+                                        .skip(node.left_or_offset as usize)
+                                        .take(node.count as usize)
+                                    {
+                                        let triangle = [
+                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                mesh.vertices[vertex_indices[0] as usize],
+                                            )),
+                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                mesh.vertices[vertex_indices[1] as usize],
+                                            )),
+                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                                mesh.vertices[vertex_indices[2] as usize],
+                                            )),
+                                        ];
 
-                                    if node.count == std::u32::MAX {
-                                        // branch.
-                                        next_nodes.push(node.left_or_offset as usize);
-                                        next_nodes.push(node.left_or_offset as usize + 1);
-                                    } else {
-                                        // leaf.
-                                        for vertex_indices in mesh
-                                            .bvh
-                                            .triangles
-                                            .iter()
-                                            .skip(node.left_or_offset as usize)
-                                            .take(node.count as usize)
+                                        triangle_intersection_count += 1;
+                                        if let Some(tri_int) =
+                                            bvh::intersect::ray_versus_triangle(ray, triangle)
                                         {
-                                            let triangle = [
-                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                    mesh.vertices[vertex_indices[0] as usize],
-                                                )),
-                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                    mesh.vertices[vertex_indices[1] as usize],
-                                                )),
-                                                cgmath::Point3::from(Into::<[f32; 3]>::into(
-                                                    mesh.vertices[vertex_indices[2] as usize],
-                                                )),
-                                            ];
-
-                                            if let Some(tri_int) =
-                                                bvh::intersect::ray_versus_triangle(ray, triangle)
-                                            {
-                                                if tri_int.t < closest_t {
-                                                    closest_t = tri_int.t;
-                                                    closest_mesh_index = mesh_index;
-                                                }
+                                            if tri_int.t < closest_t {
+                                                closest_t = tri_int.t;
+                                                closest_mesh_index = mesh_index;
                                             }
                                         }
                                     }
@@ -649,15 +668,23 @@ fn main() {
                             }
                         }
 
-                        if next_nodes.is_empty() {
-                            break;
+                        match node_offset {
+                            0 => stack.push(Item {
+                                node_base,
+                                node_offset: 1,
+                            }),
+                            1 => {}
+                            _ => unreachable!(),
                         }
-
-                        std::mem::swap(&mut current_nodes, &mut next_nodes);
                     }
                 }
 
-                dbg!(closest_t);
+                let cast_elapsed = cast_start.elapsed();
+
+                println!(
+                    "aabb {:04}, triangle {:04}, {:?}",
+                    aabb_intersection_count, triangle_intersection_count, cast_elapsed
+                );
 
                 let wld_to_cam = camera.transform.pos_from_parent().cast::<f64>().unwrap();
                 let cam_to_clp = frustum.perspective(&range);
@@ -704,7 +731,9 @@ fn main() {
                             let [r, g, b, a] = RGBA_PALETTE[color_index];
                             color_index = (color_index + 1) % RGBA_PALETTE.len();
                             if closest_t < std::f32::INFINITY && mesh_index == closest_mesh_index {
-                                [1.0, 0.0, 1.0, 1.0]
+                                let s = (elapsed * 8.0).sin() * 0.5 + 0.5;
+                                let f = |n, m| (1.0 - s) * n + s * m;
+                                [f(r, 1.0), f(g, 0.0), f(b, 1.0), a]
                             } else {
                                 [r * 0.8, g * 0.8, b * 0.8, a]
                             }
@@ -741,8 +770,8 @@ fn main() {
                         let node_descriptions = &mesh_node_descriptions[mesh_index];
 
                         for &node_index in hit_node_indices.iter() {
-                            let offset =
-                                node_descriptions[node_index] as usize * std::mem::size_of::<u32>();
+                            let offset = node_descriptions[node_index as usize] as usize
+                                * std::mem::size_of::<u32>();
                             gl.draw_elements_base_vertex(
                                 gl::POINTS,
                                 1,
