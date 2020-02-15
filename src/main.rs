@@ -371,10 +371,10 @@ fn main() {
     let mut mouse_state = mouse_state::MouseState::default();
     let mut camera = bvh::camera::Camera {
         transform: bvh::camera::CameraTransform {
-            position: cgmath::Point3::new(0.0, 0.0, 5.0),
-            yaw: cgmath::Deg(0.0).into(),
-            pitch: cgmath::Deg(0.0).into(),
-            fovy: cgmath::Deg(90.0).into(),
+            position: Point3::new(0.0, 0.0, 5.0),
+            yaw: Deg(0.0).into(),
+            pitch: Deg(0.0).into(),
+            fovy: Deg(90.0).into(),
         },
         properties: bvh::camera::CameraProperties {
             z0: -200.0,
@@ -452,8 +452,9 @@ fn main() {
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    mouse_state.x = position.x as f64 / window_state.dimensions[0] as f64;
-                    mouse_state.y = 1.0 - position.y as f64 / window_state.dimensions[1] as f64;
+                    mouse_state.x = (position.x as f64 + 0.5) / window_state.dimensions[0] as f64;
+                    mouse_state.y =
+                        1.0 - (position.y as f64 + 0.5) / window_state.dimensions[1] as f64;
                 }
                 WindowEvent::Focused(focus) => window_state.focus = focus,
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
@@ -498,26 +499,26 @@ fn main() {
                             glutin::event::ElementState::Released => 1.0,
                             glutin::event::ElementState::Pressed => 4.0,
                         };
-                        cgmath::Vector3 {
+                        Vector3 {
                             x: key_delta(keyboard_state.a, keyboard_state.d, amp),
                             y: key_delta(keyboard_state.z, keyboard_state.q, amp),
                             z: key_delta(keyboard_state.w, keyboard_state.s, amp),
                         }
                     } else {
-                        use cgmath::prelude::*;
-                        cgmath::Vector3::zero()
+                        use prelude::*;
+                        Vector3::zero()
                     },
-                    yaw: cgmath::Rad(if window_state.focus && focus_camera {
+                    yaw: Rad(if window_state.focus && focus_camera {
                         -mouse_state.dx as f32
                     } else {
                         0.0
                     }),
-                    pitch: cgmath::Rad(if window_state.focus && focus_camera {
+                    pitch: Rad(if window_state.focus && focus_camera {
                         -mouse_state.dy as f32
                     } else {
                         0.0
                     }),
-                    fovy: cgmath::Rad(if window_state.focus && focus_camera {
+                    fovy: Rad(if window_state.focus && focus_camera {
                         mouse_state.dscroll as f32
                     } else {
                         0.0
@@ -529,7 +530,7 @@ fn main() {
 
                 // Render.
                 let frustum = {
-                    use cgmath::*;
+                    use *;
                     let dimensions = Vector2::from(window_state.dimensions)
                         .cast::<f64>()
                         .unwrap();
@@ -555,7 +556,7 @@ fn main() {
                 };
 
                 let ray = {
-                    use cgmath::{InnerSpace, Rotation};
+                    use {InnerSpace, Rotation};
 
                     let (x, y) = if focus_camera {
                         (0.5, 0.5)
@@ -563,14 +564,28 @@ fn main() {
                         (mouse_state.x, mouse_state.y)
                     };
 
+                    // Point on near plane
+                    let direction_cam = Vector3 {
+                        x: (1.0 - x) * frustum.x0 + x * frustum.x1,
+                        y: (1.0 - y) * frustum.y0 + y * frustum.y1,
+                        z: -1.0,
+                    } * (-frustum.z1);
+
+                    let direction_wld = camera
+                        .transform
+                        .rot_to_parent()
+                        .cast::<f64>()
+                        .unwrap()
+                        .rotate_vector(direction_cam);
+
                     bvh::ray::Ray {
-                        origin: camera.transform.position,
+                        origin: camera.transform.position.cast::<f64>().unwrap() + direction_wld,
                         direction: camera
                             .transform
                             .rot_to_parent()
                             .cast::<f64>()
                             .unwrap()
-                            .rotate_vector(cgmath::Vector3 {
+                            .rotate_vector(Vector3 {
                                 x: (1.0 - x) * frustum.x0 + x * frustum.x1,
                                 y: (1.0 - y) * frustum.y0 + y * frustum.y1,
                                 z: -1.0,
@@ -626,13 +641,13 @@ fn main() {
                                         .take(node.count as usize)
                                     {
                                         let triangle = [
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                            Point3::from(Into::<[f32; 3]>::into(
                                                 mesh.vertices[vertex_indices[0] as usize],
                                             )),
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                            Point3::from(Into::<[f32; 3]>::into(
                                                 mesh.vertices[vertex_indices[1] as usize],
                                             )),
-                                            cgmath::Point3::from(Into::<[f32; 3]>::into(
+                                            Point3::from(Into::<[f32; 3]>::into(
                                                 mesh.vertices[vertex_indices[2] as usize],
                                             )),
                                         ];

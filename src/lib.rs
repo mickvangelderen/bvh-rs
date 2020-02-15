@@ -5,7 +5,6 @@ pub mod camera;
 pub mod clamp;
 pub mod frustum;
 pub mod intersect;
-pub mod matrix;
 pub mod range;
 pub mod ray;
 pub mod vector;

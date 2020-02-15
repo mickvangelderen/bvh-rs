@@ -13,4 +13,4 @@ log = "0.4.8"
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "master" }
 glutin = "0.22.0"
 num-traits = "*"
-cgmath = "*"
+nalgebra = "*"

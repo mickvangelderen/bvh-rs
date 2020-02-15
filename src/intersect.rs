@@ -1,4 +1,4 @@
-use cgmath::*;
+use nalgebra::Point3;
 
 use crate::aabb::*;
 use crate::ray::*;

@@ -1,5 +1,5 @@
 use num_traits::{cast, Float};
-use crate::matrix::*;
+use nalgebra::*;
 use crate::range::*;
 
 /// linear interpolation coefficients
@@ -28,7 +28,7 @@ pub struct Frustum3<T> {
     pub z1: T,
 }
 
-impl<T: Float> Frustum3<T> {
+impl<T> Frustum3<T> where T: nalgebra::Scalar + nalgebra::RealField {
     #[inline]
     pub fn zero() -> Self {
         Self {

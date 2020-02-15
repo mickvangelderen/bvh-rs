@@ -20,19 +20,14 @@ impl<T> Vector3<T> where T: Copy {
 impl<T> Vector3<T> where T: PartialOrd {
     pub fn largest_component(self) -> Axis3 {
         let Self { x, y, z } = self;
-        if x >= y {
-            if x >= z {
-                Axis3::X
-            } else {
-                Axis3::Z
-            }
-        } else {
-            if y >= z {
-                Axis3::Y
-            } else {
-                Axis3::Z
-            }
+        let mut axis = Axis3::X;
+        if self[Axis3::Y] > self[axis] {
+            axis = Axis3::Y;
         }
+        if self[Axis3::Z] > self[axis] {
+            axis = Axis3::Z;
+        }
+        axis
     }
 }
 
@@ -175,31 +170,25 @@ where
     }
 }
 
+const AXES3: [Axis3; 3] = [Axis3::X, Axis3::Y, Axis3::Z];
+
 impl<T> Vector3<T>
 where
     T: PartialOrd,
 {
     pub fn ew_min_assign(&mut self, other: Vector3<T>) {
-        if other.x < self.x {
-            self.x = other.x
-        }
-        if other.y < self.y {
-            self.y = other.y
-        }
-        if other.z < self.z {
-            self.z = other.z
+        for &axis in AXES3.iter() {
+            if other[axis] < self[axis] {
+                self[axis] = other[axis]
+            }
         }
     }
 
     pub fn ew_max_assign(&mut self, other: Vector3<T>) {
-        if other.x > self.x {
-            self.x = other.x
-        }
-        if other.y > self.y {
-            self.y = other.y
-        }
-        if other.z > self.z {
-            self.z = other.z
+        for &axis in AXES3.iter() {
+            if other[axis] > self[axis] {
+                self[axis] = other[axis]
+            }
         }
     }
 }

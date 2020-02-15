@@ -1,4 +1,4 @@
-use cgmath::*;
+use nalgebra::{Point3, Vector3};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Ray {
